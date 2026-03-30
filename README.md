@@ -3,11 +3,7 @@
 隕石を避けながら宇宙を進む、シンプルでスリリングな横スクロールゲームです。
 
 ---
-
-## 📸 スクリーンショット
-
-![ゲーム画面](screenshot.png)
-
+<img src="screenshot.gif">
 ---
 
 ## 🎮 ゲーム概要
@@ -59,7 +55,7 @@
 
 ## ▶️ プレイ方法
 
-[Github Pages版](https://osumu.github.io/meteor))を開くだけで誰でも遊べます!
+[Github Pages版](https://osumu.github.io/meteor)を開くだけで誰でも遊べます!
 
 ローカルで遊びたい場合は：
 
