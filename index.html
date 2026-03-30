@@ -339,7 +339,7 @@
 
 
 
-    <svg id="speedSVG" style="display:none" width="50" height="0" viewBox="0 0 40 40"
+    <svg id="speedSVG" style="display:none" width="50" height="50" viewBox="0 0 40 40"
         xmlns="http://www.w3.org/2000/svg">
         <g stroke-linecap="round" stroke="#FFF8E1">
             <line x1="10" y1="17" x2="22" y2="17" stroke-width="2.4" />
@@ -529,11 +529,22 @@
     </svg>
 
     <audio id="bgm" src="bgm.mp3" loop></audio>
+    <audio id="seHit" src="hit.mp3"></audio>
+    <audio id="seItem" src="item.mp3"></audio>
+    <audio id="seGoal" src="goal.mp3"></audio>
 
     <script>
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
         const bgm = document.getElementById("bgm");
+        const seHit = document.getElementById("seHit");
+        const seItem = document.getElementById("seItem");
+        const seGoal = document.getElementById("seGoal");
+
+        bgm.volume = 0.2;
+        seHit.volume = 0.8;
+        seItem.volume = 0.7;
+        seGoal.volume = 1.0;
 
         // let debugHitbox = true;
 
@@ -562,10 +573,12 @@
         let highScore = localStorage.getItem("highScore") || 0;
 
         let goal = {
-            x: 10000 * difficulty * 2,
+            x: 6000,
             y: 0,
             size: 80
         };
+
+
         let cameraX = 0;
 
         // ===== SVG → Image変換 =====
@@ -576,6 +589,15 @@
             return img;
         }
 
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        resizeCanvas();
+        window.addEventListener("resize", resizeCanvas);
+
+
         const playerImg = svgToImage(document.getElementById("playerSVG"));
         const meteorImg = svgToImage(document.getElementById("meteorSVG1"));
 
@@ -585,7 +607,8 @@
             double: svgToImage(document.getElementById("doubleSVG")),
             slow: svgToImage(document.getElementById("slowSVG")),
             score: svgToImage(document.getElementById("scoreboostSVG")),
-            blast: svgToImage(document.getElementById("meteorBlastSVG"))
+            blast: svgToImage(document.getElementById("meteorBlastSVG")),
+            exshield: svgToImage(document.getElementById("exshieldSVG"))
         };
 
         // ===== 入力（キーボード）=====
@@ -628,9 +651,6 @@
             items = [];
             meteors = [];
 
-            goal.x = 3000;
-            goal.y = canvas.height / 2;
-
             gameCleared = false;
 
             meteors = [];
@@ -639,6 +659,10 @@
             currentLevel = level;
 
             difficulty = level === 'easy' ? 0.6 : level === 'normal' ? 1 : 1.6;
+
+            if (level === "easy") goal.x = 100000;
+            if (level === "normal") goal.x = 500000;
+            if (level === "hard") goal.x = 1000000;
 
             scrollSpeed = 2 * difficulty;
             itemSpeed = scrollSpeed * 1.5;
@@ -666,7 +690,10 @@
 
             cleared = false;
 
-            goal.x = 3000;
+            if (level === "easy") goal.x = 2000;
+            if (level === "normal") goal.x = 5000;
+            if (level === "hard") goal.x = 10000;
+
             goal.y = canvas.height / 2;
 
             loop();
@@ -693,6 +720,9 @@
         function clearGame() {
             if (cleared) return;
 
+            seGoal.currentTime = 0;
+            seGoal.play();
+
             cleared = true;
             gameOver = true;
 
@@ -708,6 +738,10 @@
         function damagePlayer() {
             if (shield) return;
             hp--;
+
+            seHit.currentTime = 0;
+            seHit.play();
+
             damageFlash = 10;
             if (navigator.vibrate) navigator.vibrate(200);
 
@@ -733,12 +767,11 @@
         // ===== 隕石 =====
         function spawnMeteor() {
             const x = canvas.width + Math.random() * 200;
-            if (x + cameraX > goal.x) return;
+            if (x + cameraX > goal.x - 2) return;
 
-            const isLarge = Math.random() < 0.4; // 40%で大
+            const isLarge = Math.random() < 0.4;
 
             if (isLarge) {
-                // ===== 大隕石 =====
                 meteors.push({
                     x: canvas.width + 50,
                     y: Math.random() * (canvas.height - 120),
@@ -748,7 +781,6 @@
                     damage: 2
                 });
             } else {
-                // ===== 小隕石 =====
                 meteors.push({
                     x: canvas.width + 50,
                     y: Math.random() * (canvas.height - 60),
@@ -763,7 +795,7 @@
         // ===== アイテム =====
         function spawnItem() {
             const x = canvas.width + Math.random() * 200;
-            if (x + cameraX > goal.x) return;
+            if (x + cameraX > goal.x - 2) return;
 
             const types = ["shield", "speed", "score", "slow", "blast", "double", "exshield"];
             const type = types[Math.floor(Math.random() * types.length)];
@@ -778,6 +810,8 @@
 
         // ===== アイテム効果 =====
         function applyItem(type) {
+            seItem.currentTime = 0;
+            seItem.play();
 
             if (type === "shield") {
                 shield = true;
@@ -853,9 +887,11 @@
             if (keys["ArrowUp"]) player.y -= player.speed;
             if (keys["ArrowDown"]) player.y += player.speed;
 
+            const playerBottomOffset = player.size * 0.4;
             if (player.y < 0) player.y = 0;
-            if (player.y + player.size > canvas.height)
-                player.y = canvas.height - player.size;
+            if (player.y + player.size - playerBottomOffset > canvas.height) {
+                player.y = canvas.height - player.size + playerBottomOffset;
+            }
         }
 
 
@@ -892,12 +928,23 @@
 
             items.forEach(i => {
                 const img = itemImages[i.type];
+                console.log("draw item" + i.type)
                 ctx.drawImage(img, i.x, i.y, i.size, i.size);
             });
+
+            ctx.save();
+
+            if (scoreFlash > 0) {
+                ctx.shadowColor = "yellow";
+                ctx.shadowBlur = 20;
+            }
 
             ctx.font = "20px Arial";
             ctx.fillStyle = "white";
             ctx.fillText("Score: " + score, 10, 30);
+
+            ctx.restore();
+
 
             for (let i = 0; i < maxHP; i++) {
                 ctx.font = "24px Arial";
@@ -916,13 +963,6 @@
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 damageFlash--;
             }
-
-            if (scoreFlash > 0) {
-                ctx.shadowColor = "yellow";
-                ctx.shadowBlur = 20;
-            } else {
-                ctx.shadowBlur = 0;
-            }
         }
 
         function drawGoal() {
@@ -940,22 +980,25 @@
         }
 
         function checkGoal() {
-            const dx = (player.x + player.size / 2) + cameraX - goal.x;
-            const dy = (player.y + player.size / 2) - goal.y;
+            const goalScreenX = goal.x - cameraX;
+
+            const px = player.x + player.size / 2;
+            const py = player.y + player.size / 2;
+
+            const dx = px - goalScreenX;
+            const dy = py - goal.y;
 
             const dist = Math.hypot(dx, dy);
 
-            if (dist < goal.size / 2) {
+            if (dist < goal.size / 2 + player.size * 0.3) {
                 clearGame();
             }
         }
 
+
         // ===== ループ =====
         function loop() {
             if (gameOver) return;
-
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
 
             movePlayer();
             update();
