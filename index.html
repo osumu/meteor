@@ -190,7 +190,7 @@
     </div>
 
     <!-- プレイヤー -->
-    <svg id="playerSVG" style="display: none;" width="200" height="200" viewBox="0 0 200 200"
+    <svg id="playerSVG" style="display: none;" width="200" height="200" viewBox="0 0 40 40"
         xmlns="http://www.w3.org/2000/svg" fill="none" stroke="white" stroke-width="2">
         <g transform="rotate(45 25 25)">
             <path d="M25 8 C20 16, 19 24, 19 30 L19 36 L25 34 L31 36 L31 30 C31 24, 30 16, 25 8 Z"></path>
@@ -534,501 +534,373 @@
 
     <script>
         const canvas = document.getElementById("gameCanvas");
-        const ctx = canvas.getContext("2d");
-        const bgm = document.getElementById("bgm");
-        const seHit = document.getElementById("seHit");
-        const seItem = document.getElementById("seItem");
-        const seGoal = document.getElementById("seGoal");
+const ctx = canvas.getContext("2d");
+const bgm = document.getElementById("bgm");
+const seHit = document.getElementById("seHit");
+const seItem = document.getElementById("seItem");
+const seGoal = document.getElementById("seGoal");
 
-        bgm.volume = 0.2;
-        seHit.volume = 0.8;
-        seItem.volume = 0.7;
-        seGoal.volume = 1.0;
+bgm.volume = 0.2;
+seHit.volume = 0.8;
+seItem.volume = 0.7;
+seGoal.volume = 1.0;
 
-        // let debugHitbox = true;
+let difficulty = 1;
+let currentLevel = "normal";
 
-        // ===== 状態 =====
-        let difficulty = 1;
-        let currentLevel = "normal";
+let player;
+let meteors;
+let items;
+let score = 0, gameOver = false;
 
-        let player
-        let meteors
-        let items;
-        let score = 0, gameOver = false;
+let hp = 5;
+let maxHP = 5;
+let damageFlash = 0;
+let prevScore = 0;
+let scoreFlash = 0;
 
-        let hp = 5;
-        let maxHP = 5;
-        let damageFlash = 0;
-        let prevScore = 0;
-        let scoreFlash = 0;
+let shield = false;
+let doubleScore = false;
+let slow = false;
 
-        let shield = false;
-        let doubleScore = false;
-        let slow = false;
+let scrollSpeed = 3;
+let itemSpeed = 5;
 
-        let scrollSpeed = 3;
-        let itemSpeed = 5;
+let highScore = localStorage.getItem("highScore") || 0;
 
-        let highScore = localStorage.getItem("highScore") || 0;
+let goal = { x: 6000, y: 0, size: 80 };
 
-        let goal = {
-            x: 6000,
-            y: 0,
-            size: 80
-        };
+let cameraX = 0;
 
+function svgToImage(svgElement) {
+    const svgData = new XMLSerializer().serializeToString(svgElement);
+    const img = new Image();
+    img.src = "data:image/svg+xml;base64," + btoa(svgData);
+    return img;
+}
 
-        let cameraX = 0;
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+resizeCanvas();
+window.addEventListener("resize", resizeCanvas);
 
-        // ===== SVG → Image変換 =====
-        function svgToImage(svgElement) {
-            const svgData = new XMLSerializer().serializeToString(svgElement);
-            const img = new Image();
-            img.src = "data:image/svg+xml;base64," + btoa(svgData);
-            return img;
-        }
+const playerImg = svgToImage(document.getElementById("playerSVG"));
+const meteorImg = svgToImage(document.getElementById("meteorSVG1"));
 
-        function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        }
+const itemImages = {
+    shield: svgToImage(document.getElementById("shieldSVG")),
+    speed: svgToImage(document.getElementById("speedSVG")),
+    double: svgToImage(document.getElementById("doubleSVG")),
+    slow: svgToImage(document.getElementById("slowSVG")),
+    score: svgToImage(document.getElementById("scoreboostSVG")),
+    blast: svgToImage(document.getElementById("meteorBlastSVG")),
+    exshield: svgToImage(document.getElementById("exshieldSVG"))
+};
 
-        resizeCanvas();
-        window.addEventListener("resize", resizeCanvas);
+const keys = {};
+addEventListener("keydown", e => keys[e.key] = true);
+addEventListener("keyup", e => keys[e.key] = false);
 
+let touchStartY = null;
+canvas.addEventListener("touchstart", e => {
+    touchStartY = e.touches[0].clientY;
+});
+canvas.addEventListener("touchmove", e => {
+    if (touchStartY === null) return;
+    let touchY = e.touches[0].clientY;
+    let diff = touchY - touchStartY;
+    player.y += diff * 0.5;
+    touchStartY = touchY;
+});
+document.body.addEventListener("touchmove", e => {
+    e.preventDefault();
+}, { passive: false });
 
-        const playerImg = svgToImage(document.getElementById("playerSVG"));
-        const meteorImg = svgToImage(document.getElementById("meteorSVG1"));
+function startGame(level) {
+    gameOver = false;
+    score = 0;
+    cameraX = 0;
+    items = [];
+    meteors = [];
+    gameCleared = false;
+    currentLevel = level;
 
-        const itemImages = {
-            shield: svgToImage(document.getElementById("shieldSVG")),
-            speed: svgToImage(document.getElementById("speedSVG")),
-            double: svgToImage(document.getElementById("doubleSVG")),
-            slow: svgToImage(document.getElementById("slowSVG")),
-            score: svgToImage(document.getElementById("scoreboostSVG")),
-            blast: svgToImage(document.getElementById("meteorBlastSVG")),
-            exshield: svgToImage(document.getElementById("exshieldSVG"))
-        };
+    difficulty = level === 'easy' ? 0.6 : level === 'normal' ? 1 : 1.6;
 
-        // ===== 入力（キーボード）=====
-        const keys = {};
-        addEventListener("keydown", e => keys[e.key] = true);
-        addEventListener("keyup", e => keys[e.key] = false);
+    if (level === "easy") goal.x = 2000;
+    if (level === "normal") goal.x = 5000;
+    if (level === "hard") goal.x = 10000;
 
-        // ===== ✅ タッチ操作（スワイプ）=====
-        let touchStartY = null;
+    scrollSpeed = 2 * difficulty;
+    itemSpeed = scrollSpeed * 1.5;
 
-        canvas.addEventListener("touchstart", e => {
-            touchStartY = e.touches[0].clientY;
+    player = {
+        x: 120,
+        y: canvas.height / 2,
+        size: 200,
+        speed: 7
+    };
+
+    score = 0;
+    gameOver = false;
+    hp = maxHP;
+
+    shield = false;
+    doubleScore = false;
+    slow = false;
+
+    document.getElementById('startScreen').style.display = 'none';
+    document.getElementById('alert').style.display = 'none';
+
+    bgm.currentTime = 0;
+    bgm.play();
+
+    cleared = false;
+    goal.y = canvas.height / 2;
+
+    loop();
+}
+
+function endGame() {
+    gameOver = true;
+    bgm.pause();
+    if (score > highScore) {
+        highScore = score;
+        localStorage.setItem("highScore", highScore);
+    }
+    document.getElementById('alert').style.display = 'flex';
+    document.getElementById('alert').style.color = 'red';
+    document.getElementById('finalScore').textContent =
+        "ゲームオーバー..." + "スコア: " + score + " / ハイスコア: " + highScore;
+}
+
+let cleared = false;
+
+function clearGame() {
+    if (cleared) return;
+    seGoal.currentTime = 0;
+    seGoal.play();
+    cleared = true;
+    gameOver = true;
+    if (bgm) bgm.pause();
+    document.getElementById('alert').style.display = 'flex';
+    document.getElementById('alert').style.color = 'white';
+    document.getElementById('finalScore').textContent =
+        "クリア！ スコア: " + score + " / ハイスコア: " + highScore;
+}
+
+function damagePlayer() {
+    if (shield) return;
+    hp--;
+    seHit.currentTime = 0;
+    seHit.play();
+    damageFlash = 10;
+    if (navigator.vibrate) navigator.vibrate(200);
+    if (hp <= 0) endGame();
+}
+
+function hit(a, b) {
+    const ax = a.x + a.size * 0.125;
+    const ay = a.y + a.size * 0.125;
+    const bx = b.x + b.size / 2;
+    const by = b.y + b.size / 2;
+    const dist = Math.hypot(ax - bx, ay - by);
+    const ar = a.size * 0.25;
+    const base = b.type === "large" ? 0.45 : 0.35;
+    const br = b.size * base * (1 + difficulty * 0.1);
+    return dist < (ar + br);
+}
+
+function spawnMeteor() {
+    const x = canvas.width + Math.random() * 200;
+    if (x + cameraX > goal.x - 2) return;
+    const isLarge = Math.random() < 0.4;
+    if (isLarge) {
+        meteors.push({
+            x: canvas.width + 50,
+            y: Math.random() * (canvas.height - 120),
+            size: 120,
+            speed: 2 + Math.random() * 2 * difficulty,
+            type: "large",
+            damage: 2
         });
-
-        canvas.addEventListener("touchmove", e => {
-            if (touchStartY === null) return;
-
-            let touchY = e.touches[0].clientY;
-            let diff = touchY - touchStartY;
-
-            // スワイプ量に応じて移動（感度調整）
-            player.y += diff * 0.5;
-
-            touchStartY = touchY;
+    } else {
+        meteors.push({
+            x: canvas.width + 50,
+            y: Math.random() * (canvas.height - 60),
+            size: 60,
+            speed: 3 + Math.random() * 3 * difficulty,
+            type: "small",
+            damage: 1
         });
+    }
+}
 
-        // スクロール防止
-        document.body.addEventListener("touchmove", e => {
-            e.preventDefault();
-        }, { passive: false });
+function spawnItem() {
+    const x = canvas.width + Math.random() * 200;
+    if (x + cameraX > goal.x - 2) return;
+    const types = ["shield", "speed", "score", "slow", "blast", "double", "exshield"];
+    const type = types[Math.floor(Math.random() * types.length)];
+    items.push({
+        x: canvas.width + 50,
+        y: Math.random() * (canvas.height - 50),
+        size: 50,
+        type: type
+    });
+}
 
-        // ===== スタート =====
-        function startGame(level) {
+function applyItem(type) {
+    seItem.currentTime = 0;
+    seItem.play();
+    if (type === "shield") {
+        shield = true;
+        setTimeout(() => shield = false, 8000);
+    }
+    if (type === "exshield") {
+        shield = true;
+        setTimeout(() => shield = false, 15000);
+    }
+    if (type === "score") {
+        score += doubleScore ? 400 : 200;
+    }
+    if (type === "slow") {
+        slow = true;
+        setTimeout(() => slow = false, 7000);
+    }
+    if (type === "blast") {
+        meteors = [];
+    }
+    if (type === "double") {
+        doubleScore = true;
+        setTimeout(() => doubleScore = false, 10000);
+    }
+}
 
-            gameOver = false;
-            score = 0;
-
-            cameraX = 0;
-
-            items = [];
-            meteors = [];
-
-            gameCleared = false;
-
-            meteors = [];
-            items = [];
-
-            currentLevel = level;
-
-            difficulty = level === 'easy' ? 0.6 : level === 'normal' ? 1 : 1.6;
-
-            if (level === "easy") goal.x = 1000000;
-            if (level === "normal") goal.x = 5000000;
-            if (level === "hard") goal.x = 10000000;
-
-            scrollSpeed = 2 * difficulty;
-            itemSpeed = scrollSpeed * 1.5;
-
-            player = {
-                x: 120,
-                y: canvas.height / 2,
-                size: 200,
-                speed: 7
-            };
-
-            score = 0;
-            gameOver = false;
-            hp = maxHP;
-
-            shield = false;
-            doubleScore = false;
-            slow = false;
-
-            document.getElementById('startScreen').style.display = 'none';
-            document.getElementById('alert').style.display = 'none';
-
-            bgm.currentTime = 0;
-            bgm.play();
-
-            cleared = false;
-
-            if (level === "easy") goal.x = 2000;
-            if (level === "normal") goal.x = 5000;
-            if (level === "hard") goal.x = 10000;
-
-            goal.y = canvas.height / 2;
-
-            loop();
+function update() {
+    if (gameOver) return;
+    meteors.forEach(m => {
+        let speed = m.speed + scrollSpeed;
+        if (slow) speed *= 0.4;
+        m.x -= speed;
+    });
+    items.forEach(i => i.x -= itemSpeed);
+    meteors.forEach(m => {
+        if (hit(player, m)) {
+            damagePlayer();
+            m.x = -100;
         }
-
-        // ===== 終了 =====
-        function endGame() {
-            gameOver = true;
-            bgm.pause();
-
-            if (score > highScore) {
-                highScore = score;
-                localStorage.setItem("highScore", highScore);
-            }
-
-            document.getElementById('alert').style.display = 'flex';
-            document.getElementById('alert').style.color = 'red';
-            document.getElementById('finalScore').textContent =
-                "ゲームオーバー..." + "スコア: " + score + " / ハイスコア: " + highScore;
+    });
+    items.forEach(i => {
+        if (hit(player, i)) {
+            applyItem(i.type);
+            i.collected = true;
         }
-
-        let cleared = false;
-
-        function clearGame() {
-            if (cleared) return;
-
-            seGoal.currentTime = 0;
-            seGoal.play();
-
-            cleared = true;
-            gameOver = true;
-
-            if (bgm) bgm.pause();
-
-            document.getElementById('alert').style.display = 'flex';
-            document.getElementById('alert').style.color = 'white';
-            document.getElementById('finalScore').textContent =
-                "クリア！ スコア: " + score + " / ハイスコア: " + highScore;
-        }
-
-        // ===== ダメージ =====
-        function damagePlayer() {
-            if (shield) return;
-            hp--;
-
-            seHit.currentTime = 0;
-            seHit.play();
-
-            damageFlash = 10;
-            if (navigator.vibrate) navigator.vibrate(200);
-
-            if (hp <= 0) endGame();
-        }
-
-        function hit(a, b) {
-            const ax = a.x + a.size * 0.15;
-            const ay = a.y + a.size * 0.15;
-
-            const bx = b.x + b.size / 2;
-            const by = b.y + b.size / 2;
-
-            const dist = Math.hypot(ax - bx, ay - by);
-
-            const ar = a.size * 0.3;
-            const base = b.type === "large" ? 0.45 : 0.35;
-            const br = b.size * base * (1 + difficulty * 0.1);
-
-            return dist < (ar + br);
-        }
-
-        // ===== 隕石 =====
-        function spawnMeteor() {
-            const x = canvas.width + Math.random() * 200;
-            if (x + cameraX > goal.x - 2) return;
-
-            const isLarge = Math.random() < 0.4;
-
-            if (isLarge) {
-                meteors.push({
-                    x: canvas.width + 50,
-                    y: Math.random() * (canvas.height - 120),
-                    size: 120,
-                    speed: 2 + Math.random() * 2 * difficulty,
-                    type: "large",
-                    damage: 2
-                });
-            } else {
-                meteors.push({
-                    x: canvas.width + 50,
-                    y: Math.random() * (canvas.height - 60),
-                    size: 60,
-                    speed: 3 + Math.random() * 3 * difficulty,
-                    type: "small",
-                    damage: 1
-                });
-            }
-        }
-
-        // ===== アイテム =====
-        function spawnItem() {
-            const x = canvas.width + Math.random() * 200;
-            if (x + cameraX > goal.x - 2) return;
-
-            const types = ["shield", "speed", "score", "slow", "blast", "double", "exshield"];
-            const type = types[Math.floor(Math.random() * types.length)];
-
-            items.push({
-                x: canvas.width + 50,
-                y: Math.random() * (canvas.height - 50),
-                size: 50,
-                type: type
-            });
-        }
-
-        // ===== アイテム効果 =====
-        function applyItem(type) {
-            seItem.currentTime = 0;
-            seItem.play();
-
-            if (type === "shield") {
-                shield = true;
-                setTimeout(() => shield = false, 8000);
-            }
-
-            if (type === "exshield") {
-                shield = true;
-                setTimeout(() => shield = false, 15000);
-            }
-
-            if (type === "score") {
-                score += doubleScore ? 400 : 200;
-            }
-
-            if (type === "slow") {
-                slow = true;
-                setTimeout(() => slow = false, 7000);
-            }
-
-            if (type === "blast") {
-                meteors = [];
-            }
-
-            if (type === "double") {
-                doubleScore = true;
-                setTimeout(() => doubleScore = false, 10000);
-            }
-        }
-
-        // ===== 更新 =====
-        function update() {
-            if (gameOver) return;
-
-            meteors.forEach(m => {
-                let speed = m.speed + scrollSpeed;
-                if (slow) speed *= 0.4;
-                m.x -= speed;
-            });
-
-            items.forEach(i => i.x -= itemSpeed);
-
-            meteors.forEach(m => {
-                if (hit(player, m)) {
-                    damagePlayer();
-                    m.x = -100;
-                }
-            });
-
-            items.forEach(i => {
-                if (hit(player, i)) {
-                    applyItem(i.type);
-                    i.collected = true;
-                }
-            });
-
-            meteors = meteors.filter(m => m.x + m.size > 0);
-            items = items.filter(i => i.x + i.size > 0 && !i.collected);
-
-            score += doubleScore ? 2 : 1;
-
-            cameraX += scrollSpeed;
-            checkGoal();
-
-            if (score > prevScore) {
-                scoreFlash = 10;
-                prevScore = score;
-            }
-        }
-
-        // ===== 移動（キーボード）=====
-        function movePlayer() {
-            if (keys["ArrowUp"]) player.y -= player.speed;
-            if (keys["ArrowDown"]) player.y += player.speed;
-
-            const playerBottomOffset = player.size * 0.4;
-            if (player.y < 0) player.y = 0;
-            if (player.y + player.size - playerBottomOffset > canvas.height) {
-                player.y = canvas.height - player.size + playerBottomOffset;
-            }
-        }
-
-
-        // ===== 描画 =====
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawGoal();
-
-            ctx.drawImage(playerImg, player.x, player.y, player.size, player.size);
-
-            // if (debugHitbox) {
-            //     const ax = player.x + player.size * 0.15;
-            //     const ay = player.y + player.size * 0.15;
-            //     const ar = player.size * 0.35;
-            //     ctx.beginPath();
-            //     ctx.arc(ax, ay, ar, 0, Math.PI * 2);
-            //     ctx.strokeStyle = "red";
-            //     ctx.lineWidth = 2;
-            //     ctx.stroke();
-            // }
-            meteors.forEach(m => {
-                ctx.drawImage(meteorImg, m.x, m.y, m.size, m.size);
-                //  if (debugHitbox) {
-                //     const bx = m.x + m.size / 2;
-                //     const by = m.y + m.size / 2;
-                //     const br = m.size * 0.35;
-                //     ctx.beginPath();
-                //     ctx.arc(bx, by, br, 0, Math.PI * 2);
-                //     ctx.strokeStyle = "yellow";
-                //     ctx.lineWidth = 2;
-                //     ctx.stroke();
-                // }
-            });
-
-            items.forEach(i => {
-                const img = itemImages[i.type];
-                console.log("draw item" + i.type)
-                ctx.drawImage(img, i.x, i.y, i.size, i.size);
-            });
-
-            ctx.save();
-
-            if (scoreFlash > 0) {
-                ctx.shadowColor = "yellow";
-                ctx.shadowBlur = 20;
-            }
-
-            ctx.font = "20px Arial";
-            ctx.fillStyle = "white";
-            ctx.fillText("Score: " + score, 10, 30);
-
-            ctx.restore();
-
-
-            for (let i = 0; i < maxHP; i++) {
-                ctx.font = "24px Arial";
-
-                if (i < hp) {
-                    ctx.fillStyle = "red";   // 残りHP
-                    ctx.fillText("♥", 10 + i * 25, 60);
-                } else {
-                    ctx.fillStyle = "gray";  // 失ったHP
-                    ctx.fillText("♡", 10 + i * 25, 60);
-                }
-            }
-
-            if (damageFlash > 0) {
-                ctx.fillStyle = "rgba(255, 0, 0, 0.3)";
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                damageFlash--;
-            }
-        }
-
-        function drawGoal() {
-            const screenX = goal.x - cameraX; // ← スクロール分を引く
-            const screenY = goal.y;
-
-            ctx.fillStyle = "gold";
-            ctx.beginPath();
-            ctx.arc(screenX, screenY, goal.size / 2, 0, Math.PI * 2);
-            ctx.fill();
-
-            ctx.fillStyle = "black";
-            ctx.font = "16px Arial";
-            ctx.fillText("GOAL!!", screenX - 25, screenY + 5);
-        }
-
-        function checkGoal() {
-            const goalScreenX = goal.x - cameraX;
-
-            const px = player.x + player.size / 2;
-            const py = player.y + player.size / 2;
-
-            const dx = px - goalScreenX;
-            const dy = py - goal.y;
-
-            const dist = Math.hypot(dx, dy);
-
-            if (dist < goal.size / 2 + player.size * 0.3) {
-                clearGame();
-            }
-        }
-
-
-        // ===== ループ =====
-        function loop() {
-            if (gameOver) return;
-
-            movePlayer();
-            update();
-            draw();
-
-            requestAnimationFrame(loop);
-        }
-
-        // ===== 出現 =====
-        setInterval(() => { if (!gameOver) spawnMeteor(); }, 800);
-        setInterval(() => { if (!gameOver) spawnItem(); }, 3000);
-
-        // ===== リスタート =====
-        function restartGame() {
-            startGame(currentLevel);
-        }
-
-        function goHome() {
-            document.getElementById('startScreen').style.display = 'block';
-            document.getElementById('alert').style.display = 'none';
-            gameOver = true;
-        }
-
-        document.getElementById("retryBtn").onclick = async => {
-            restartGame()
-        }
-
-        document.getElementById("goStartBtn").onclick = async => {
-            goHome()
-        }
-
+    });
+    meteors = meteors.filter(m => m.x + m.size > 0);
+    items = items.filter(i => i.x + i.size > 0 && !i.collected);
+    score += doubleScore ? 2 : 1;
+    cameraX += scrollSpeed;
+    checkGoal();
+    if (score > prevScore) {
+        scoreFlash = 10;
+        prevScore = score;
+    }
+}
+
+function movePlayer() {
+    if (keys["ArrowUp"]) player.y -= player.speed;
+    if (keys["ArrowDown"]) player.y += player.speed;
+    const bottomOffset = player.size * 0.4;
+    if (player.y < 0) player.y = 0;
+    if (player.y + player.size - bottomOffset > canvas.height) {
+        player.y = canvas.height - player.size + bottomOffset;
+    }
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawGoal();
+    ctx.drawImage(playerImg, player.x, player.y, player.size, player.size);
+    meteors.forEach(m => {
+        ctx.drawImage(meteorImg, m.x, m.y, m.size, m.size);
+    });
+    items.forEach(i => {
+        const img = itemImages[i.type];
+        ctx.drawImage(img, i.x, i.y, i.size, i.size);
+    });
+    ctx.save();
+    if (scoreFlash > 0) {
+        ctx.shadowColor = "yellow";
+        ctx.shadowBlur = 20;
+    }
+    ctx.font = "20px Arial";
+    ctx.fillStyle = "white";
+    ctx.fillText("Score: " + score, 10, 30);
+    ctx.restore();
+    for (let i = 0; i < maxHP; i++) {
+        ctx.font = "24px Arial";
+        ctx.fillStyle = i < hp ? "red" : "gray";
+        ctx.fillText(i < hp ? "♥" : "♡", 10 + i * 25, 60);
+    }
+    if (damageFlash > 0) {
+        ctx.fillStyle = "rgba(255, 0, 0, 0.3)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        damageFlash--;
+    }
+}
+
+function drawGoal() {
+    const screenX = goal.x - cameraX;
+    const screenY = goal.y;
+    ctx.fillStyle = "gold";
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, goal.size / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "black";
+    ctx.font = "16px Arial";
+    ctx.fillText("GOAL!!", screenX - 25, screenY + 5);
+}
+
+function checkGoal() {
+    const goalScreenX = goal.x - cameraX;
+    const px = player.x + player.size * 0.125;
+    const py = player.y + player.size * 0.125;
+    const dx = px - goalScreenX;
+    const dy = py - goal.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < goal.size / 2 + player.size * 0.4) {
+        clearGame();
+    }
+}
+
+function loop() {
+    if (gameOver) return;
+    movePlayer();
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+setInterval(() => { if (!gameOver) spawnMeteor(); }, 800);
+setInterval(() => { if (!gameOver) spawnItem(); }, 3000);
+
+function restartGame() {
+    startGame(currentLevel);
+}
+
+function goHome() {
+    location.reload()
+    gameOver = true;
+}
+
+document.getElementById("retryBtn").onclick = async () => {
+    restartGame();
+};
+document.getElementById("goStartBtn").onclick = async () => {
+    goHome();
+};
 
     </script>
 
