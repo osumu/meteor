@@ -629,9 +629,9 @@
 
             difficulty = level === 'easy' ? 0.6 : level === 'normal' ? 1 : 1.6;
 
-            if (level === "easy") goal.x = 2000;
-            if (level === "normal") goal.x = 5000;
-            if (level === "hard") goal.x = 10000;
+            if (level === "easy") goal.x = 5000;
+            if (level === "normal") goal.x = 10000;
+            if (level === "hard") goal.x = 30000;
 
             scrollSpeed = 2 * difficulty;
             itemSpeed = scrollSpeed * 1.5;
@@ -709,7 +709,7 @@
             const by = b.y + b.size / 2;
             const dist = Math.hypot(ax - bx, ay - by);
             const ar = a.size * 0.25;
-            const base = b.type === "large" ? 0.45 : 0.35;
+            const base = b.type === "large" ? 0.45 : 0.5;
             const br = b.size * base * (1 + difficulty * 0.1);
             return dist < (ar + br);
         }
